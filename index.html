@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TRAHN Grid Trader</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Space+Grotesk:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>TRAHN<span class="accent">GRID</span></h1>
+            <div class="subtitle">ETH Grid Trader • 7 Day View</div>
+        </header>
+        
+        <div class="chart-container">
+            <canvas id="chart"></canvas>
+            <div class="price-tooltip" id="tooltip"></div>
+        </div>
+        
+        <div class="stats">
+            <div class="stat">
+                <span class="stat-label">Current Price</span>
+                <span class="stat-value" id="current-price">--</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">7D High</span>
+                <span class="stat-value high" id="high-price">--</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">7D Low</span>
+                <span class="stat-value low" id="low-price">--</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">Buys</span>
+                <span class="stat-value buy" id="buy-count">0</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">Sells</span>
+                <span class="stat-value sell" id="sell-count">0</span>
+            </div>
+        </div>
+        
+        <div class="legend">
+            <span class="legend-item"><span class="dot buy-dot"></span> Buy (USDC → ETH)</span>
+            <span class="legend-item"><span class="dot sell-dot"></span> Sell (ETH → USDC)</span>
+        </div>
+    </div>
+    
+    <script src="chart.js"></script>
+</body>
+</html>

@@ -1,8 +1,21 @@
 /**
- * TRAHN Grid Trader - Custom Canvas Chart
+ * TRAHN Grid Trader - Custom Canvas Chart with Day Carousel
  * No dependencies. Pure JavaScript.
+ * Polls backend data for real-time updates.
  */
 
+// ============================================
+// Configuration
+// ============================================
+const CONFIG = {
+    dataUrl: './data/current.json',
+    pollIntervalMs: 5000,  // Poll every 5 seconds
+    retryIntervalMs: 10000, // Retry after 10 seconds on failure
+};
+
+// ============================================
+// Chart Class
+// ============================================
 class TrahnChart {
     constructor(canvasId) {
         this.canvas = document.getElementById(canvasId);
@@ -40,7 +53,6 @@ class TrahnChart {
     }
     
     setupCanvas() {
-        // Handle high DPI displays
         const rect = this.canvas.getBoundingClientRect();
         const dpr = window.devicePixelRatio || 1;
         
@@ -56,38 +68,32 @@ class TrahnChart {
     }
     
     setupEventListeners() {
-        // Resize handler
         window.addEventListener('resize', () => {
             this.setupCanvas();
             this.draw();
         });
         
-        // Mouse move for tooltip
         this.canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
         this.canvas.addEventListener('mouseleave', () => this.hideTooltip());
     }
     
-    // Convert price to Y coordinate
     priceToY(price) {
         const range = this.maxPrice - this.minPrice;
         const normalized = (price - this.minPrice) / range;
         return this.padding.top + this.chartHeight * (1 - normalized);
     }
     
-    // Convert timestamp to X coordinate
     timeToX(timestamp) {
         const range = this.maxTime - this.minTime;
         const normalized = (timestamp - this.minTime) / range;
         return this.padding.left + this.chartWidth * normalized;
     }
     
-    // Convert X coordinate to timestamp
     xToTime(x) {
         const normalized = (x - this.padding.left) / this.chartWidth;
         return this.minTime + normalized * (this.maxTime - this.minTime);
     }
     
-    // Convert Y coordinate to price
     yToPrice(y) {
         const normalized = 1 - (y - this.padding.top) / this.chartHeight;
         return this.minPrice + normalized * (this.maxPrice - this.minPrice);
@@ -97,11 +103,14 @@ class TrahnChart {
         this.priceData = priceData;
         this.trades = trades;
         
-        if (priceData.length === 0) return;
+        if (priceData.length === 0) {
+            this.drawEmpty();
+            return;
+        }
         
         // Calculate bounds
-        const prices = priceData.map(d => d.price);
-        const times = priceData.map(d => d.timestamp);
+        const prices = priceData.map(d => d.p || d.price);
+        const times = priceData.map(d => d.t || d.timestamp);
         
         this.minPrice = Math.min(...prices);
         this.maxPrice = Math.max(...prices);
@@ -109,21 +118,31 @@ class TrahnChart {
         this.maxTime = Math.max(...times);
         
         // Add 5% padding to price range
-        const pricePadding = (this.maxPrice - this.minPrice) * 0.05;
+        const pricePadding = (this.maxPrice - this.minPrice) * 0.05 || 10;
         this.minPrice -= pricePadding;
         this.maxPrice += pricePadding;
         
         // Set baseline as first price
-        this.baselinePrice = priceData[0].price;
+        this.baselinePrice = prices[0];
         
         this.draw();
     }
     
+    drawEmpty() {
+        this.ctx.clearRect(0, 0, this.width, this.height);
+        this.ctx.fillStyle = this.colors.textMuted;
+        this.ctx.font = '14px JetBrains Mono, monospace';
+        this.ctx.textAlign = 'center';
+        this.ctx.fillText('No data for this day', this.width / 2, this.height / 2);
+    }
+    
     draw() {
-        // Clear canvas
         this.ctx.clearRect(0, 0, this.width, this.height);
         
-        if (this.priceData.length === 0) return;
+        if (this.priceData.length === 0) {
+            this.drawEmpty();
+            return;
+        }
         
         this.drawGrid();
         this.drawBaseline();
@@ -139,7 +158,6 @@ class TrahnChart {
         this.ctx.strokeStyle = this.colors.grid;
         this.ctx.lineWidth = 1;
         
-        // Horizontal grid lines
         const priceStep = this.calculateNiceStep(this.maxPrice - this.minPrice, 5);
         const startPrice = Math.ceil(this.minPrice / priceStep) * priceStep;
         
@@ -166,7 +184,6 @@ class TrahnChart {
         
         this.ctx.setLineDash([]);
         
-        // Baseline label
         this.ctx.fillStyle = this.colors.textMuted;
         this.ctx.font = '11px JetBrains Mono, monospace';
         this.ctx.textAlign = 'left';
@@ -178,27 +195,23 @@ class TrahnChart {
         
         const baselineY = this.priceToY(this.baselinePrice);
         
-        // Draw filled area above baseline (green) and below (red)
         this.ctx.beginPath();
-        this.ctx.moveTo(this.timeToX(this.priceData[0].timestamp), baselineY);
+        this.ctx.moveTo(this.timeToX(this.priceData[0].t || this.priceData[0].timestamp), baselineY);
         
-        // Line to first point
-        const firstY = this.priceToY(this.priceData[0].price);
-        this.ctx.lineTo(this.timeToX(this.priceData[0].timestamp), firstY);
+        const firstY = this.priceToY(this.priceData[0].p || this.priceData[0].price);
+        this.ctx.lineTo(this.timeToX(this.priceData[0].t || this.priceData[0].timestamp), firstY);
         
-        // Draw all points
         for (let i = 1; i < this.priceData.length; i++) {
-            const x = this.timeToX(this.priceData[i].timestamp);
-            const y = this.priceToY(this.priceData[i].price);
+            const x = this.timeToX(this.priceData[i].t || this.priceData[i].timestamp);
+            const y = this.priceToY(this.priceData[i].p || this.priceData[i].price);
             this.ctx.lineTo(x, y);
         }
         
-        // Close path back to baseline
-        const lastX = this.timeToX(this.priceData[this.priceData.length - 1].timestamp);
+        const lastPoint = this.priceData[this.priceData.length - 1];
+        const lastX = this.timeToX(lastPoint.t || lastPoint.timestamp);
         this.ctx.lineTo(lastX, baselineY);
         this.ctx.closePath();
         
-        // Create gradient
         const gradient = this.ctx.createLinearGradient(0, this.padding.top, 0, this.height - this.padding.bottom);
         gradient.addColorStop(0, this.colors.greenFill);
         gradient.addColorStop(0.5, 'rgba(0,0,0,0)');
@@ -206,66 +219,6 @@ class TrahnChart {
         
         this.ctx.fillStyle = gradient;
         this.ctx.fill();
-        
-        // Now draw separate green and red fills more precisely
-        this.drawSplitFill();
-    }
-    
-    drawSplitFill() {
-        const baselineY = this.priceToY(this.baselinePrice);
-        
-        // Green fill (above baseline)
-        this.ctx.beginPath();
-        let started = false;
-        
-        for (let i = 0; i < this.priceData.length; i++) {
-            const x = this.timeToX(this.priceData[i].timestamp);
-            const y = this.priceToY(this.priceData[i].price);
-            const clampedY = Math.max(y, this.padding.top);
-            
-            if (y <= baselineY) {
-                if (!started) {
-                    this.ctx.moveTo(x, baselineY);
-                    started = true;
-                }
-                this.ctx.lineTo(x, Math.min(y, baselineY));
-            } else if (started) {
-                this.ctx.lineTo(x, baselineY);
-            }
-        }
-        
-        if (started) {
-            this.ctx.lineTo(this.timeToX(this.priceData[this.priceData.length - 1].timestamp), baselineY);
-            this.ctx.closePath();
-            this.ctx.fillStyle = this.colors.greenFill;
-            this.ctx.fill();
-        }
-        
-        // Red fill (below baseline)
-        this.ctx.beginPath();
-        started = false;
-        
-        for (let i = 0; i < this.priceData.length; i++) {
-            const x = this.timeToX(this.priceData[i].timestamp);
-            const y = this.priceToY(this.priceData[i].price);
-            
-            if (y >= baselineY) {
-                if (!started) {
-                    this.ctx.moveTo(x, baselineY);
-                    started = true;
-                }
-                this.ctx.lineTo(x, Math.max(y, baselineY));
-            } else if (started) {
-                this.ctx.lineTo(x, baselineY);
-            }
-        }
-        
-        if (started) {
-            this.ctx.lineTo(this.timeToX(this.priceData[this.priceData.length - 1].timestamp), baselineY);
-            this.ctx.closePath();
-            this.ctx.fillStyle = this.colors.redFill;
-            this.ctx.fill();
-        }
     }
     
     drawPriceLine() {
@@ -278,12 +231,15 @@ class TrahnChart {
         this.ctx.lineCap = 'round';
         
         const firstPoint = this.priceData[0];
-        this.ctx.moveTo(this.timeToX(firstPoint.timestamp), this.priceToY(firstPoint.price));
+        this.ctx.moveTo(
+            this.timeToX(firstPoint.t || firstPoint.timestamp), 
+            this.priceToY(firstPoint.p || firstPoint.price)
+        );
         
         for (let i = 1; i < this.priceData.length; i++) {
             const point = this.priceData[i];
-            const x = this.timeToX(point.timestamp);
-            const y = this.priceToY(point.price);
+            const x = this.timeToX(point.t || point.timestamp);
+            const y = this.priceToY(point.p || point.price);
             this.ctx.lineTo(x, y);
         }
         
@@ -309,29 +265,33 @@ class TrahnChart {
         this.ctx.font = '11px JetBrains Mono, monospace';
         this.ctx.textAlign = 'center';
         
-        const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-        const dayMs = 24 * 60 * 60 * 1000;
+        // For 24-hour view, show hours
+        const hourMs = 60 * 60 * 1000;
+        const rangeMs = this.maxTime - this.minTime;
         
-        // Show day labels
-        let currentDay = new Date(this.minTime).setHours(0, 0, 0, 0);
+        // Determine step based on range
+        let stepMs = hourMs * 4; // Every 4 hours by default
+        if (rangeMs < hourMs * 6) stepMs = hourMs; // If < 6 hours, every hour
+        if (rangeMs < hourMs * 2) stepMs = hourMs / 2; // If < 2 hours, every 30 min
         
-        while (currentDay <= this.maxTime) {
-            const x = this.timeToX(currentDay);
+        let current = Math.ceil(this.minTime / stepMs) * stepMs;
+        
+        while (current <= this.maxTime) {
+            const x = this.timeToX(current);
             if (x >= this.padding.left && x <= this.width - this.padding.right) {
-                const date = new Date(currentDay);
-                const label = days[date.getDay()];
+                const date = new Date(current);
+                const label = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
                 this.ctx.fillText(label, x, this.height - this.padding.bottom + 20);
             }
-            currentDay += dayMs;
+            current += stepMs;
         }
     }
     
     drawTrades() {
         for (const trade of this.trades) {
-            const x = this.timeToX(trade.timestamp);
+            const x = this.timeToX(trade.t || trade.timestamp);
             const y = this.priceToY(trade.price);
             
-            // Skip if outside chart bounds
             if (x < this.padding.left || x > this.width - this.padding.right) continue;
             
             const color = trade.side === 'buy' ? this.colors.buy : this.colors.sell;
@@ -361,24 +321,23 @@ class TrahnChart {
         if (this.priceData.length === 0) return;
         
         const lastPoint = this.priceData[this.priceData.length - 1];
-        const y = this.priceToY(lastPoint.price);
+        const price = lastPoint.p || lastPoint.price;
+        const y = this.priceToY(price);
         const x = this.width - this.padding.right;
         
-        const isUp = lastPoint.price >= this.baselinePrice;
+        const isUp = price >= this.baselinePrice;
         const color = isUp ? this.colors.green : this.colors.red;
         
-        // Price tag background
         this.ctx.fillStyle = color;
         const tagWidth = 70;
         const tagHeight = 22;
         this.roundRect(x + 4, y - tagHeight / 2, tagWidth, tagHeight, 4);
         this.ctx.fill();
         
-        // Price text
         this.ctx.fillStyle = '#fff';
         this.ctx.font = 'bold 11px JetBrains Mono, monospace';
         this.ctx.textAlign = 'left';
-        this.ctx.fillText(this.formatPrice(lastPoint.price), x + 10, y + 4);
+        this.ctx.fillText(this.formatPrice(price), x + 10, y + 4);
     }
     
     handleMouseMove(e) {
@@ -386,30 +345,28 @@ class TrahnChart {
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
         
-        // Check if within chart area
         if (x < this.padding.left || x > this.width - this.padding.right ||
             y < this.padding.top || y > this.height - this.padding.bottom) {
             this.hideTooltip();
             return;
         }
         
-        // Find nearest price point
         const timestamp = this.xToTime(x);
         let nearestPoint = null;
         let nearestDistance = Infinity;
         
         for (const point of this.priceData) {
-            const distance = Math.abs(point.timestamp - timestamp);
+            const t = point.t || point.timestamp;
+            const distance = Math.abs(t - timestamp);
             if (distance < nearestDistance) {
                 nearestDistance = distance;
                 nearestPoint = point;
             }
         }
         
-        // Check for nearby trade
         let nearestTrade = null;
         for (const trade of this.trades) {
-            const tradeX = this.timeToX(trade.timestamp);
+            const tradeX = this.timeToX(trade.t || trade.timestamp);
             const tradeY = this.priceToY(trade.price);
             const distance = Math.sqrt((x - tradeX) ** 2 + (y - tradeY) ** 2);
             if (distance < 15) {
@@ -424,7 +381,9 @@ class TrahnChart {
     }
     
     showTooltip(mouseX, mouseY, point, trade = null) {
-        const date = new Date(point.timestamp);
+        const price = point.p || point.price;
+        const timestamp = point.t || point.timestamp;
+        const date = new Date(timestamp);
         const timeStr = date.toLocaleString('en-US', {
             month: 'short',
             day: 'numeric',
@@ -433,25 +392,23 @@ class TrahnChart {
         });
         
         let html = `
-            <div class="price">$${point.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+            <div class="price">$${price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
             <div class="time">${timeStr}</div>
         `;
         
         if (trade) {
             const sideLabel = trade.side === 'buy' ? 'BUY' : 'SELL';
-            const amount = trade.amount ? `$${trade.amount.toFixed(2)}` : '';
+            const amount = trade.usdValue ? `$${trade.usdValue.toFixed(2)}` : '';
             html += `<div class="trade-info ${trade.side}">${sideLabel} ${amount}</div>`;
         }
         
         this.tooltip.innerHTML = html;
         this.tooltip.classList.add('visible');
         
-        // Position tooltip
         const rect = this.canvas.getBoundingClientRect();
         let tooltipX = mouseX - rect.left + 15;
         let tooltipY = mouseY - rect.top - 10;
         
-        // Keep tooltip in bounds
         const tooltipRect = this.tooltip.getBoundingClientRect();
         if (tooltipX + tooltipRect.width > this.width) {
             tooltipX = mouseX - rect.left - tooltipRect.width - 15;
@@ -465,7 +422,6 @@ class TrahnChart {
         this.tooltip.classList.remove('visible');
     }
     
-    // Utility functions
     calculateNiceStep(range, targetSteps) {
         const roughStep = range / targetSteps;
         const magnitude = Math.pow(10, Math.floor(Math.log10(roughStep)));
@@ -503,95 +459,269 @@ class TrahnChart {
 }
 
 // ============================================
-// Data Fetching
+// Carousel Controller
 // ============================================
-
-async function fetchETHPriceHistory() {
-    try {
-        // CoinGecko API - 7 days of hourly data
-        const response = await fetch(
-            'https://api.coingecko.com/api/v3/coins/ethereum/market_chart?vs_currency=usd&days=7'
-        );
-        const data = await response.json();
+class CarouselController {
+    constructor(chart) {
+        this.chart = chart;
+        this.availableDays = [];
+        this.currentDayIndex = 0;
+        this.currentDay = null;
+        this.isLive = false;
+        this.pollInterval = null;
+        this.dayCache = {};
         
-        // Transform to our format
-        return data.prices.map(([timestamp, price]) => ({
-            timestamp,
-            price
-        }));
-    } catch (error) {
-        console.error('Failed to fetch price data:', error);
-        return [];
+        // DOM elements
+        this.prevBtn = document.getElementById('prev-day');
+        this.nextBtn = document.getElementById('next-day');
+        this.dateLabel = document.getElementById('date-label');
+        this.dateStatus = document.getElementById('date-status');
+        this.loading = document.getElementById('loading');
+        this.dayIndicators = document.getElementById('day-indicators');
+        this.connectionStatus = document.getElementById('connection-status');
+        
+        this.setupEventListeners();
     }
-}
-
-async function fetchTrades() {
-    // For now, return mock trades to demonstrate the dots
-    // Later this will read from the backend state file
-    const now = Date.now();
-    const day = 24 * 60 * 60 * 1000;
     
-    // Mock trades spread across the week
-    return [
-        { timestamp: now - 5 * day, price: 3180, side: 'buy', amount: 100 },
-        { timestamp: now - 4.5 * day, price: 3220, side: 'sell', amount: 100 },
-        { timestamp: now - 2 * day, price: 3050, side: 'buy', amount: 100 },
-        { timestamp: now - 1 * day, price: 3150, side: 'sell', amount: 100 },
-    ];
+    setupEventListeners() {
+        this.prevBtn.addEventListener('click', () => this.navigatePrev());
+        this.nextBtn.addEventListener('click', () => this.navigateNext());
+        
+        // Keyboard navigation
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowLeft') this.navigatePrev();
+            if (e.key === 'ArrowRight') this.navigateNext();
+        });
+    }
+    
+    async start() {
+        this.showLoading(true);
+        await this.fetchData();
+        this.startPolling();
+    }
+    
+    async fetchData() {
+        try {
+            const response = await fetch(CONFIG.dataUrl + '?t=' + Date.now());
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            
+            const data = await response.json();
+            this.handleData(data);
+            this.setConnectionStatus('connected', 'Live');
+            
+        } catch (error) {
+            console.warn('Failed to fetch data:', error.message);
+            this.setConnectionStatus('waiting', 'Waiting for backend...');
+            
+            // Retry after delay
+            setTimeout(() => this.fetchData(), CONFIG.retryIntervalMs);
+        }
+    }
+    
+    handleData(data) {
+        this.showLoading(false);
+        
+        // Update available days
+        if (data.availableDays && data.availableDays.length > 0) {
+            this.availableDays = data.availableDays;
+            this.currentDay = data.currentDay;
+            this.currentDayIndex = this.availableDays.indexOf(data.currentDay);
+            if (this.currentDayIndex === -1) {
+                this.currentDayIndex = this.availableDays.length - 1;
+            }
+        } else if (data.currentDay) {
+            this.availableDays = [data.currentDay];
+            this.currentDay = data.currentDay;
+            this.currentDayIndex = 0;
+        }
+        
+        // Cache current day data
+        if (data.prices) {
+            this.dayCache[data.currentDay] = {
+                prices: data.prices,
+                trades: data.trades || []
+            };
+        }
+        
+        // If viewing the current (live) day, update chart
+        if (this.currentDayIndex === this.availableDays.length - 1) {
+            this.isLive = true;
+            this.updateChart(data.prices || [], data.trades || []);
+        }
+        
+        this.updateUI();
+    }
+    
+    updateChart(prices, trades) {
+        // Transform data format if needed
+        const priceData = prices.map(p => ({
+            timestamp: p.t || p.timestamp,
+            price: p.p || p.price
+        }));
+        
+        const tradeData = trades.map(t => ({
+            timestamp: t.t || t.timestamp,
+            price: t.price,
+            side: t.side,
+            usdValue: t.usdValue
+        }));
+        
+        this.chart.setData(priceData, tradeData);
+        this.updateStats(priceData, tradeData);
+    }
+    
+    updateStats(prices, trades) {
+        if (prices.length === 0) return;
+        
+        const priceValues = prices.map(d => d.price);
+        const currentPrice = priceValues[priceValues.length - 1];
+        const highPrice = Math.max(...priceValues);
+        const lowPrice = Math.min(...priceValues);
+        
+        document.getElementById('current-price').textContent = 
+            '$' + currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        document.getElementById('high-price').textContent = 
+            '$' + highPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        document.getElementById('low-price').textContent = 
+            '$' + lowPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        
+        const buyCount = trades.filter(t => t.side === 'buy').length;
+        const sellCount = trades.filter(t => t.side === 'sell').length;
+        document.getElementById('buy-count').textContent = buyCount;
+        document.getElementById('sell-count').textContent = sellCount;
+    }
+    
+    updateUI() {
+        // Update date label
+        const currentDay = this.availableDays[this.currentDayIndex];
+        if (currentDay) {
+            const date = new Date(currentDay + 'T12:00:00');
+            this.dateLabel.textContent = date.toLocaleDateString('en-US', {
+                weekday: 'short',
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric'
+            });
+        } else {
+            this.dateLabel.textContent = 'No Data';
+        }
+        
+        // Update status
+        this.isLive = this.currentDayIndex === this.availableDays.length - 1;
+        if (this.isLive) {
+            this.dateStatus.textContent = 'LIVE';
+            this.dateStatus.className = 'date-status live';
+        } else {
+            this.dateStatus.textContent = '24h snapshot';
+            this.dateStatus.className = 'date-status';
+        }
+        
+        // Update navigation buttons
+        this.prevBtn.disabled = this.currentDayIndex <= 0;
+        this.nextBtn.disabled = this.currentDayIndex >= this.availableDays.length - 1;
+        
+        // Update day indicators
+        this.updateDayIndicators();
+    }
+    
+    updateDayIndicators() {
+        this.dayIndicators.innerHTML = '';
+        
+        for (let i = 0; i < this.availableDays.length; i++) {
+            const dot = document.createElement('div');
+            dot.className = 'day-dot' + (i === this.currentDayIndex ? ' active' : '');
+            dot.title = this.availableDays[i];
+            dot.addEventListener('click', () => this.navigateTo(i));
+            this.dayIndicators.appendChild(dot);
+        }
+    }
+    
+    navigatePrev() {
+        if (this.currentDayIndex > 0) {
+            this.navigateTo(this.currentDayIndex - 1);
+        }
+    }
+    
+    navigateNext() {
+        if (this.currentDayIndex < this.availableDays.length - 1) {
+            this.navigateTo(this.currentDayIndex + 1);
+        }
+    }
+    
+    async navigateTo(index) {
+        if (index < 0 || index >= this.availableDays.length) return;
+        
+        this.currentDayIndex = index;
+        const day = this.availableDays[index];
+        
+        // Check cache
+        if (this.dayCache[day]) {
+            this.updateChart(this.dayCache[day].prices, this.dayCache[day].trades);
+        } else {
+            // Fetch day data
+            this.showLoading(true);
+            await this.fetchDayData(day);
+        }
+        
+        this.updateUI();
+    }
+    
+    async fetchDayData(day) {
+        try {
+            const response = await fetch(`./data/${day}.json?t=` + Date.now());
+            if (response.ok) {
+                const data = await response.json();
+                this.dayCache[day] = {
+                    prices: data.prices || [],
+                    trades: data.trades || []
+                };
+                this.updateChart(data.prices || [], data.trades || []);
+            } else {
+                // No data for this day
+                this.chart.setData([], []);
+            }
+        } catch (error) {
+            console.warn(`Failed to fetch data for ${day}:`, error.message);
+            this.chart.setData([], []);
+        }
+        
+        this.showLoading(false);
+    }
+    
+    startPolling() {
+        this.pollInterval = setInterval(async () => {
+            // Only poll if viewing live day
+            if (this.isLive) {
+                await this.fetchData();
+            }
+        }, CONFIG.pollIntervalMs);
+    }
+    
+    showLoading(show) {
+        if (show) {
+            this.loading.classList.remove('hidden');
+        } else {
+            this.loading.classList.add('hidden');
+        }
+    }
+    
+    setConnectionStatus(status, text) {
+        this.connectionStatus.className = 'connection-status ' + status;
+        this.connectionStatus.querySelector('.status-text').textContent = text;
+    }
 }
 
 // ============================================
 // Initialize
 // ============================================
-
 async function init() {
     const chart = new TrahnChart('chart');
+    const carousel = new CarouselController(chart);
     
-    // Fetch data
-    const priceData = await fetchETHPriceHistory();
-    const trades = await fetchTrades();
-    
-    if (priceData.length === 0) {
-        document.querySelector('.chart-container').innerHTML = 
-            '<div class="loading">Failed to load price data</div>';
-        return;
-    }
-    
-    // Set data and draw
-    chart.setData(priceData, trades);
-    
-    // Update stats
-    const prices = priceData.map(d => d.price);
-    const currentPrice = prices[prices.length - 1];
-    const highPrice = Math.max(...prices);
-    const lowPrice = Math.min(...prices);
-    
-    document.getElementById('current-price').textContent = 
-        '$' + currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    document.getElementById('high-price').textContent = 
-        '$' + highPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    document.getElementById('low-price').textContent = 
-        '$' + lowPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    
-    const buyCount = trades.filter(t => t.side === 'buy').length;
-    const sellCount = trades.filter(t => t.side === 'sell').length;
-    document.getElementById('buy-count').textContent = buyCount;
-    document.getElementById('sell-count').textContent = sellCount;
-    
-    // Auto-refresh every 60 seconds
-    setInterval(async () => {
-        const newPriceData = await fetchETHPriceHistory();
-        if (newPriceData.length > 0) {
-            chart.setData(newPriceData, trades);
-            
-            const newPrices = newPriceData.map(d => d.price);
-            const newCurrentPrice = newPrices[newPrices.length - 1];
-            document.getElementById('current-price').textContent = 
-                '$' + newCurrentPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        }
-    }, 60000);
+    await carousel.start();
 }
 
-// Start when DOM is ready
 document.addEventListener('DOMContentLoaded', init);
-

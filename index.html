@@ -12,12 +12,26 @@
     <div class="container">
         <header>
             <h1>TRAHN<span class="accent">GRID</span></h1>
-            <div class="subtitle">ETH Grid Trader • 7 Day View</div>
+            <div class="subtitle">ETH Grid Trader</div>
         </header>
+        
+        <!-- Carousel Navigation -->
+        <div class="carousel-nav">
+            <button class="nav-arrow nav-prev" id="prev-day" title="Previous Day">◀</button>
+            <div class="date-display">
+                <span class="date-label" id="date-label">Loading...</span>
+                <span class="date-status" id="date-status"></span>
+            </div>
+            <button class="nav-arrow nav-next" id="next-day" title="Next Day">▶</button>
+        </div>
         
         <div class="chart-container">
             <canvas id="chart"></canvas>
             <div class="price-tooltip" id="tooltip"></div>
+            <div class="loading-overlay" id="loading">
+                <div class="spinner"></div>
+                <span>Waiting for data...</span>
+            </div>
         </div>
         
         <div class="stats">
@@ -26,11 +40,11 @@
                 <span class="stat-value" id="current-price">--</span>
             </div>
             <div class="stat">
-                <span class="stat-label">7D High</span>
+                <span class="stat-label">24H High</span>
                 <span class="stat-value high" id="high-price">--</span>
             </div>
             <div class="stat">
-                <span class="stat-label">7D Low</span>
+                <span class="stat-label">24H Low</span>
                 <span class="stat-value low" id="low-price">--</span>
             </div>
             <div class="stat">
@@ -43,9 +57,17 @@
             </div>
         </div>
         
+        <!-- Day indicator dots -->
+        <div class="day-indicators" id="day-indicators"></div>
+        
         <div class="legend">
             <span class="legend-item"><span class="dot buy-dot"></span> Buy (USDC → ETH)</span>
             <span class="legend-item"><span class="dot sell-dot"></span> Sell (ETH → USDC)</span>
+        </div>
+        
+        <div class="connection-status" id="connection-status">
+            <span class="status-dot"></span>
+            <span class="status-text">Connecting...</span>
         </div>
     </div>
     
